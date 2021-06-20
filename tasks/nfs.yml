@@ -1,0 +1,30 @@
+---
+- name: ensure NFS share and mount directories exist.
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: www-data
+    mode: 0775
+  with_items:
+    - "{{ nfs_share_dir }}"
+    - "{{ nfs_mount_dir }}"
+
+- name: flush handlers so NFS mounts are exported.
+  meta: flush_handlers
+
+# Mount configuration.
+- name: ensure the NFS volume is mounted.
+  mount:
+    name: "{{ nfs_mount_dir }}"
+    src: "{{ kubernetes_master_ip }}:{{ nfs_share_dir }}"
+    fstype: nfs
+    opts: "noauto,x-systemd.automount,x-systemd.device-timeout=10,timeo=14"
+    state: mounted
+
+- name: ensure extra NFS dirs exist.
+  file:
+    path: "{{ nfs_mount_dir }}/{{ item }}"
+    state: directory
+  with_items: "{{ nfs_extra_dirs }}"
+  run_once: True

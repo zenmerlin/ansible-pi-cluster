@@ -1,0 +1,66 @@
+---
+- hosts: k8s
+  become: true
+  vars_files:
+    - vars/main.yml
+
+  pre_tasks:
+    - include_vars: vars/vagrant.yml
+      when: deploy_target == 'vagrant'
+
+    - name: update package cache
+      tags: always
+      apt: update_cache=yes
+      changed_when: False
+
+    - name: ensure dependencies are installed
+      apt:
+        name:
+          - sudo
+          - openssh-server
+        state: present
+
+    # Encountered error during k8s setup:
+    # # Failed to reload sysctl: sysctl: cannot stat /proc/sys/net/bridge/bridge-nf-call-iptables: No such file or directory
+    # # sysctl: cannot stat /proc/sys/net/bridge/bridge-nf-call-ip6tables: No such file or directory
+    # resolution: https://gist.github.com/iamcryptoki/ed6925ce95f047673e7709f23e0b9939
+    - name: ensure kernel module br_netfilter is present
+      modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: enable cgroup features for pi deploy targets
+      include_tasks: tasks/cgroup-features.yml
+      when: deploy_target == 'pi'
+
+    - name: set the master node IP (pi deploy targets) 
+      set_fact:
+        kubernetes_master_ip: "{{ hostvars['pdl-kube-01']['ansible_host'] }}"
+      tags: always
+      when: deploy_target == 'pi'
+
+    - name: set the master node IP (virtual deploy targets)
+      set_fact:
+        kubernetes_master_ip: "{{ hostvars['192.168.77.2']['inventory_hostname'] }}"
+      tags: always
+      when: deploy_target != 'pi'
+
+  roles:
+    - role: geerlingguy.nfs
+      tags: nfs
+      when: kubernetes_role == 'master'
+
+    - role: geerlingguy.swap
+      tags: swap
+
+    - role: geerlingguy.containerd
+      tags: containerd
+
+    - role: geerlingguy.kubernetes
+      tags: kubernetes
+
+  tasks:
+    - include_tasks: tasks/nfs.yml
+      tags: nfs
+      when: kubernetes_role == 'master'
+

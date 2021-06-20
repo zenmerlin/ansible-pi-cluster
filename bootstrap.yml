@@ -1,0 +1,112 @@
+---
+# Preliminary tasks
+- hosts: all
+  become: true
+  gather_facts: no
+  tags: always
+  pre_tasks:
+    - name: pre-run | gather facts
+      setup: 
+        gather_subset: "!all,!any,!min,distribution"
+
+    - name: pre-run | update package cache (debian, etc)
+      tags: always
+      apt: update_cache=yes
+      changed_when: False
+      when: ansible_distribution in ["Debian", "Ubuntu"]
+
+# Bootstrap tasks to enable use of other playbooks
+- hosts: all
+  become: true
+  gather_facts: no
+  tags: user
+  tasks:
+    - name: bootstrap | add primary user
+      user:
+        name: jason
+        groups: sudo
+        shell: /bin/bash
+    
+    - name: bootstrap | add ssh key for primary user
+      authorized_key:
+        user: jason
+        key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDjANNVC4/F4m71Xxcr4fEIk2eEAXnd5oBqlxkvNjnPm jason.boyll@gmail.com"
+
+    - name: bootstrap | add sudoers for primary user
+      copy:
+        src: sudoers_jason
+        dest: /etc/sudoers.d/jason
+        owner: root
+        group: root
+        mode: 0440
+
+- hosts: jenkins
+  become: true
+  gather_facts: no
+  tags: jenkins
+  tasks:
+    - name: bootstrap | add jenkins user
+      user:
+        name: jenkins
+        groups: root
+        shell: /bin/bash
+        generate_ssh_key: yes
+        ssh_key_file: .ssh/id_ed25519
+        ssh_key_type: "ed25519"
+        ssh_key_comment: "jenkins"
+      register: jenkins_user
+
+    - name: bootstrap | add sudoers for jenkins user
+      copy:
+        src: sudoers_jenkins
+        dest: /etc/sudoers.d/jenkins
+        owner: root
+        group: root
+        mode: 0440
+
+- hosts: all:!jenkins
+  become: true
+  gather_facts: no
+  tags: kube
+  tasks:
+    - name: bootstrap | add jenkins user
+      user:
+        name: jenkins
+        groups: root
+        shell: /bin/bash
+    
+    - name: bootstrap | add ssh key for jenkins user
+      authorized_key:
+        user: jenkins
+        key: "{{ hostvars['pdl-tooling-01']['jenkins_user']['ssh_public_key'] }}"
+      when: hostvars['pdl-tooling-01']['jenkins_user']['ssh_public_key'] is defined
+
+    - name: bootstrap | add sudoers for jenkins user
+      copy:
+        src: sudoers_jenkins
+        dest: /etc/sudoers.d/jenkins
+        owner: root
+        group: root
+        mode: 0440
+
+# End of run cleanup
+- hosts: all
+  become: true
+  gather_facts: no
+  tags: always
+  tasks:
+    - name: pre-run | gather facts
+      setup: 
+        gather_subset: "!all,!any,!min,distribution"
+
+    - name: post-run | cleanup package cache (debian and ubuntu)
+      apt:
+        autoclean: yes
+      changed_when: false
+      when: ansible_distribution in ["Debian", "Pop!_OS", "Ubuntu"]
+
+    - name: post-run | autoremove orphan packages (debian and ubuntu)
+      apt:
+        autoremove: yes
+        purge: yes
+      when: ansible_distribution in ["Debian", "Pop!_OS", "Ubuntu"]

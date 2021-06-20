@@ -1,0 +1,4 @@
+---
+# Overrides for vagrant
+# Containerd
+docker_apt_arch: amd64

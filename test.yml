@@ -1,0 +1,13 @@
+---
+- hosts: test
+  connection: local
+  gather_facts: no
+  tasks:
+    - include_vars: main.yml
+
+    - include_vars: vagrant.yml
+      when: deploy_target == 'vagrant'
+
+    - debug: var=test_var
+    - debug: var=deploy_target
+    - debug: var=doh
